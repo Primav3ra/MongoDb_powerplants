@@ -26,6 +26,25 @@ Solar has the most plants but the least capacity. Just 195 nuclear plants hold m
 | `output/fuel_mix.png` | Share of plants by fuel type |
 | `output/capacity_vs_generation.png` | Capacity against 2013 generation, log scales, for the 2,062 plants that report it |
 
+## Power generation analysis
+
+`power_generation_analysis.R` looks at how much electricity the plants actually produce. For each plant it takes the most recent reported year of generation (2013–2019; the dataset's modelled estimates are left out) and computes its **capacity factor**: actual output divided by what the plant would produce running at full capacity all year. The data goes into a second MongoDB collection, `energy_db.plant_generation`, and the per-fuel totals come from a MongoDB aggregation pipeline.
+
+| Fuel | Plants with reported generation | Correlation, capacity vs generation (log Pearson r) | Median capacity factor |
+|---|---:|---:|---:|
+| Solar | 3,228 | 0.85 | 19% |
+| Nuclear | 112 | 0.90 | 84% |
+| Hydro | 2,004 | 0.89 | 41% |
+
+Generation rises closely with capacity for every fuel. What differs is how hard each type of plant runs: a nuclear plant produces about 4 times as much per MW as a solar farm.
+
+| File | What it shows |
+|---|---|
+| `output/generation_vs_capacity_by_fuel.png` | Generation against capacity, one panel per fuel, with reference lines for 10%, 25% and 90% capacity factor |
+| `output/capacity_factor_by_fuel.png` | Distribution of capacity factor by fuel |
+| `output/top_generators.png` | The 15 plants with the highest annual generation |
+| `output/generation_correlations.csv` | The correlation table above |
+
 Open the map HTML in a browser. It loads its JavaScript from the `power_plants_map_files/` folder next to it, so keep the two together.
 
 ## Run it
@@ -33,13 +52,14 @@ Open the map HTML in a browser. It loads its JavaScript from the `power_plants_m
 Requirements: R 4.4+, a running MongoDB server, and these packages:
 
 ```r
-install.packages(c("readr", "dplyr", "mongolite", "leaflet", "htmlwidgets", "ggplot2", "scales"))
+install.packages(c("readr", "dplyr", "mongolite", "leaflet", "htmlwidgets", "ggplot2", "scales", "tidyr"))
 ```
 
 From this folder:
 
 ```bash
-Rscript power_plants_mongodb.R
+Rscript power_plants_mongodb.R          # MongoDB load, map, capacity charts
+Rscript power_generation_analysis.R     # generation, capacity factor, correlations
 ```
 
 Or open the script in RStudio, set the working directory to this folder, and source it. The map and charts also open in the viewer.
@@ -49,7 +69,8 @@ MongoDB defaults to `mongodb://localhost:27017`. To use another server, set `MON
 ## Project layout
 
 ```
-power_plants_mongodb.R   the whole pipeline: read, filter, load to MongoDB, map, charts
+power_plants_mongodb.R       read, filter, load to MongoDB, map, capacity charts
+power_generation_analysis.R  generation and capacity factor analysis, correlation charts
 data/                    WRI Global Power Plant Database v1.3.0 (CSV, docs, licence)
 output/                  generated map and charts
 ```

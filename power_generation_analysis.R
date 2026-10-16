@@ -81,34 +81,31 @@ correlations <- plants_data %>%
   )
 
 cat("\nTotals by fuel (from MongoDB aggregation):\n")
-print(fuel_summary)
+print(mutate(fuel_summary, across(where(is.double), ~ round(.x, 1))))
 cat("\nCapacity vs generation, per fuel:\n")
-print(correlations, digits = 2)
+print(mutate(correlations, across(where(is.double), ~ round(.x, 2))))
 
 # Chart 1: generation against capacity, one panel per fuel. Dashed lines show
 # fixed capacity factors, so a point's position tells you how hard the plant runs.
-cf_lines <- expand.grid(cf = c(0.1, 0.25, 0.5, 0.9), fuel_type = fuel_types) %>%
-  mutate(fuel_type = factor(fuel_type, levels = fuel_types),
-         label = paste0(cf * 100, "%"))
+# Each panel gets its own capacity range, so the reference lines span only that panel
+cap_ranges <- plants_data %>%
+  group_by(fuel_type) %>%
+  summarise(cap_min = min(capacity_mw), cap_max = max(capacity_mw), .groups = "drop")
 
-cap_range <- range(plants_data$capacity_mw)
+cf_lines <- crossing(cf = c(0.1, 0.25, 0.9), cap_ranges) %>%
+  mutate(label = paste0(cf * 100, "%"))
+
 cf_line_points <- cf_lines %>%
-  crossing(capacity_mw = cap_range) %>%
+  pivot_longer(c(cap_min, cap_max), values_to = "capacity_mw") %>%
   mutate(generation_gwh = capacity_mw * hours_per_year * cf / 1000)
-
-cf_labels <- cf_lines %>%
-  mutate(capacity_mw = cap_range[2],
-         generation_gwh = capacity_mw * hours_per_year * cf / 1000)
 
 r_labels <- correlations %>%
   mutate(text = sprintf("r = %.2f  |  n = %s  |  median CF %.0f%%",
-                        pearson_log, format(plants, big.mark = ","), median_cf * 100))
+                        pearson_log, format(plants, big.mark = ",", trim = TRUE), median_cf * 100))
 
 correlation_plot <- ggplot(plants_data, aes(capacity_mw, generation_gwh)) +
   geom_line(data = cf_line_points, aes(group = cf), linetype = "dashed",
             color = "grey60", linewidth = 0.4) +
-  geom_text(data = cf_labels, aes(label = label), hjust = 1.1, vjust = -0.4,
-            size = 3, color = "grey45") +
   geom_point(aes(color = fuel_type), alpha = 0.45, size = 1.6, show.legend = FALSE) +
   geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "black", linewidth = 0.7) +
   geom_label(data = r_labels, aes(label = text), x = -Inf, y = Inf,
@@ -116,10 +113,10 @@ correlation_plot <- ggplot(plants_data, aes(capacity_mw, generation_gwh)) +
   scale_x_log10(labels = scales::label_comma()) +
   scale_y_log10(labels = scales::label_comma(accuracy = 0.01, drop0trailing = TRUE)) +
   scale_color_manual(values = fuel_colors) +
-  facet_wrap(~fuel_type, nrow = 1) +
+  facet_wrap(~fuel_type, nrow = 1, scales = "free_x") +
   labs(
     title = "Bigger plants generate more, but how much more depends on the fuel",
-    subtitle = "Most recent reported year per plant (2013-2019). Dashed lines mark capacity factors; black line is the log-log fit.",
+    subtitle = "Most recent reported year per plant (2013-2019). Dashed lines, bottom to top: 10%, 25% and 90% capacity factor. Black line: log-log fit.",
     x = "Installed capacity (MW, log scale)",
     y = "Annual generation (GWh, log scale)"
   ) +
@@ -146,7 +143,9 @@ cf_plot <- ggplot(plants_data, aes(fuel_type, capacity_factor, fill = fuel_type)
 # Chart 3: the biggest generators in the dataset
 top_plants <- plants_data %>%
   slice_max(generation_gwh, n = 15) %>%
-  mutate(label = paste0(name, " (", country, ")"),
+  mutate(name = ifelse(name == toupper(name), tools::toTitleCase(tolower(name)), name),
+         country = recode(country, "United States of America" = "USA"),
+         label = paste0(name, " (", country, ")"),
          label = reorder(label, generation_gwh))
 
 top_plot <- ggplot(top_plants, aes(generation_gwh / 1000, label, fill = fuel_type)) +
